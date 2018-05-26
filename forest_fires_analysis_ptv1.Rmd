@@ -1,7 +1,7 @@
 ---
 title: "Forest Fires"
 author: "PT"
-date: "May 20, 2018"
+date: "May 25, 2018"
 output:
   pdf_document: default
   html_document: default
@@ -12,90 +12,174 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 # Loading Required Packages and Reading the dataset
-```{r}
+```{r, warning=FALSE}
 library(car)
+library(ggplot2)
+library(cowplot)
 ff = read.csv('forestfires.csv')
 ```
-## Data Selection: Avoiding the Kitchen Sink Approach
 
-Given we have `r length(colnames(ff))` variables, it's likely that not all are relevant to our analysis and some may demonstrate collinearity between each other. To avoid a kitchen-sink approach to our investigation of relationships, we explore a few variables in the data set that intuitively seem irrelevant.
+## Analysis of Key Relationships
 
-While month-of-year and day-of-week could be argued to be relevant in that they might be telling of fire damage associated with behavioral activity like weekend camping and/or summer vacations, we do not have any data related to those activities and so are unable to measure their effect against hectares burned. Further, months are strongly tied to climate trends such as rainfall, temperature, humidity, etc so it makes more sense to focus on the underlying weather measurements provided.
+### Investigating Relationships between Quantitative Variables and Area
 
-For good measure, we can see that no month really stands out as having a distribution of fire damage outside the upper quartiles of any other. May can be ignored given the low number of observations. There are a few outliers in the summer months (jul,aug,sep). But by comparing the distribution of temperature by month, those outliers seem related to temperature.
-
-```{r}
-par(mfrow=c(1,2))
-boxplot(log(area + 1) ~ month, data = ff[ff$area>0,],
-        main = "Spread of Fire Damage by Month",
-        ylab = "Log of Burned Area (in hectares)")
-
-boxplot(temp~month,data = ff, main = "Temp (c) by Month")
-```
-
-*note that we take the log of (area + 1) because we have many area entries that are 0. log(0) is undefined so we can transform the variable by adding 1 to each input in the area column so that the minimum will be 0 on the log scale.
-
-We can also see that the day-of-week is a pretty weak signal when viewing the number of fires reported by day.
-
-```{r}
-plot(ff[ff$area>0,]$day, main = "Number of Fires Reported by Day")
-```
-
-Additionally, we are provided with separate x,y coordinates of the park's map. We'll check to see if the magnitude of fire damage is concentrated in particular areas of the park. If so, we may need to explore other variables in the data set grouped by location to be accurately descriptive. We need to combine XY points to get a particular location on the map. In the below graph, the numbers can be interpreted as (x,y) coordinate points.
-
-```{r}
-ff$location = paste0(ff$X,ff$Y)
-boxplot(log(ff$area + 1)~ff$location, xlab = "location coordinate", ylab = "magnitude of area burned (log scale)")
-```
-
-The coordinates 15 (1,5) and 94 (9,4) stand out as having relatively higher distributions of fire damage than other locations. This could be an area of interest to pursue after we explore and adjust for other quantitative variables in our data.
-
-For now we'll use a scatterplot matrix to help direct our focus on which variables might serve as stronger signals in leading to particularly damaging forest fires. We exclude the coordinate and date related variables for the previously mentioned reasons. We'll initially focus on specific climate type variables like temp, rain, wind, and relative humidity to easier digest bi-variate patterns with area burned. After narrowing our climate variables, we'll proceed examining our FWI index variables.
+Given the large number of variables in our dataset, we'll initially use a scatterplot matrix to help direct our focus on which variables might serve as stronger signals in leading to particularly damaging forest fires. Note that the scatterplot matrix will only give us meaningful linear trends with quantitative variables. So we'll investigate categorical variables like location, day, and month separately against our dependent variable, area. 
 
 
 ```{r, warning=FALSE}
-scatterplotMatrix( ~ log(area + 1) + temp + RH + wind + rain, data = ff,
-                   main = "Scatterplot Matrix for Key Forest Fire Climate Variables")
-```
-
-From our scatterplot matrix, we note a few initial sightings:
-
-1. With the exception of a handful of observations, nearly all were taken when there was virtually no rain. We don't see rain as being an influencer variable given the data set we have.  
-
-2. There appears to be a slight positive relationship between wind and the log of the area burned which seems to change slope around 5-6 km/h. This may indicate some sort of wind effect beyond a particular rate.
-
-3. Relative Humidity (RH) has a very strong negative linear relationship with temperature, but virtually no relationship with the area burned. We know from outside research that relative humidity is influenced by temperature. Because warm air can hold more water vapor than cool air, relative humidity falls when the temperature rises if no moisture is added to the air. The lack of rain helps explain this trend. We can probably leave RH out of further analysis.
-
-4. Temperature shows an interesting parabolic looking relationship, but it's relationship with area burned is likely influenced by the high number of no-fire observations recorded and a few outliers where there were large area fires and low temperatures.
-
-## Defining Potentially Damaging Fires
-Something to note is that there are many entries of zero area burns (no fires) which may be dragging down and skewing relationships. In fact, there are `r length(ff[ff$area > 0,]$area)` observations out of 517 that include area burn events. So we could refine our study by defining potentially damaging fires as those that are greater than or equal to 1 hectare (~2.5 acres). This is somewhat arbitrary, but the thinking is that larger fires are harder to contain and risk spreading further, threatining greater damage.
-
-Subsetting the data against events where there was area burn greater than 1 hectare leaves us with `r nrow(ff[ff$area>=1,])` observations which is a sufficient amount to be descriptive.
-
-## Examining FWI Index Variables
-
-We'll now investigate the variables in the FWI index
-
-```{r,warning=FALSE}
-scatterplotMatrix( ~ log(area+1) + FFMC + DMC + DC + ISI, data = ff[ff$area>0,],
+scatterplotMatrix( ~ log(area + 1) + temp + RH + wind + rain + FFMC + DMC + DC + ISI, data = ff,
                    main = "Scatterplot Matrix for Key Forest Fire Variables")
 ```
 
-At initial glance there doesn't seem to be any linear relationships between log(area) burned and the FWI variables. However, we can see a semblance of:
+From our scatterplot matrix, we note a few noticeable sightings between our dependent variable and the others:
 
-1. An exponential relationship between FFMC (fine fuel moisture code) and area.
-2. Clustering type patterns with area burn and DMC (Duff Moisture Code).
+1. Temperature shows an interesting parabolic looking relationship which is unexpected because we intuitively think that lower temperatures would be associated with less fire spread
+ 
+2. There appears to be a slight positive relationship between wind and the log of the area burned which seems to change slope around 5-6 km/h. This may indicate some sort of wind effect beyond a particular rate.
 
-Focusing in on the relationship between FFMC and are
+3. There's a semblance of an exponential relationship between FFMC (fine fuel moisture code) and the log(area). Perhaps beyond a certain FFMC rating, the impact on area burned increases incrementally with FFMC.
 
-```{r,}
-plot(ff[ff$area>0,]$FFMC,log(ff[ff$area>0,]$area+1))
+4. Lower relative humidities (RH) appear to be somewhat assoicated with larger areas burned 
+
+5. There is clustering around ranges of DC (duff code) and burn area
+
+Collinearity between Quantitative Variables:
+
+We note what appears to be collinearity between: temperature and RH, temperature and DMC, temperature and DC, and DMC and DC. We know from outside research that relative humidity is influenced by temperature. Because warm air can hold more water vapor than cool air, relative humidity falls when the temperature rises if no moisture is added to the air. The lack of rain helps explain this trend. We can probably consider relative humidity as a secondary signal and leave it out of this exploratory analysis. The same applies to DC and DMC where the Duff layer (DC) is the deepest layer of the moisture codes sitting below the layer DMC measures.
+
+\begin{center}
+Strange Behvaior in Temperature and Area Burned
+\end{center}
+
+We can get more insight into trends in temperature and the effect on burn area by grouping the temperature observations into ranges. We do so using the cut function to break the observations into 6 range groups.
+
+```{r, warning=FALSE}
+temp_cut = cut_interval(ff$temp,6)
+ggplot(data=ff, aes(temp_cut,log(area + 1))) + geom_boxplot() +
+  stat_summary(fun.y=mean, colour="darkred", geom="point") +
+  labs(title ="Avg Area Burn by Temp Groups", 
+       x = "Temp Ranges (c)", y = "Area Hectares Burned (log)")
 ```
 
+After binning temperature observations into groups, we see a more noticeable trend between the range of temperatures and the average area burned barring the first temperature group.It appears as temperatures exceed 17 degrees celcius, both the median and average area burned
+tend to increase.
+
+What's particularly interesting is that both median and average area burned are at their highest when temperatures are at their lowest. Perhaps something else was happening during these low temperature observations that was driving up the fire damage.
+ 
+To help inform us, we'll investigate where these temperature groups reside when our other suspect variables, wind and FFMC, are plotted against area burn. We do so by color coding the points in the scatterplot by their temperature range.
+
+```{r, warning=FALSE}
+gwind = ggplot(ff,aes(wind,log(area + 1),colour = temp_cut)) +   geom_point() 
+gffmc = ggplot(ff,aes(FFMC,log(area + 1),colour = temp_cut)) + geom_point()
+plot_grid(gwind,gffmc)
+```
+
+Now we can see that most of the low range temperatures associated with larger area burns are concentrated in peak wind periods. In fact, those low temperature observations have the highest count of peak-wind occurrences.This makes sense intuitively as we'd expect fires to burn across greater areas when winds are faster (all else equal). What this also helps demonstrate is that variables are likely acting together to influence area burn and so a multi-variate analysis seems more appropriate.
+
+\begin{center}
+Focusing in on FFMC Influence on Area Burn
+\end{center}
+
+From our original scatterplot matrix we saw that there were very few observations of FFMC less than 80 which could be a byproduct of the park's natural environment. We'll zoom in on the relationship by excluding FFMC observations less than 80 and investigate any new patterns
+
+```{r, warning=FALSE}
+ggplot(ff[ff$FFMC >= 80,],aes(FFMC,log(area+1))) + geom_point() + 
+  geom_smooth(method='lm')
+```
+
+After focusing in on the observations there doesn't appear to be any linearity between FFMC and Area. However, we note that the relationship may change depending on how we define damaging fires. We could refine our study by defining potentially damaging fires as those that are greater than or equal to 2 hectare (~5 acres). The thinking is that larger fires are harder to contain and risk spreading further, threatining greater damage. Defining damaging in this way, we see a different trend.
+
+```{r, warning=FALSE}
+ggplot(ff[ff$FFMC >= 80 & ff$area >= 2,],aes(FFMC,log(area))) + geom_point() + 
+  geom_smooth(method='lm') + labs(title ="Area Burned Trends", subtitle = "When Area Burned >= 2 Hectares")
+```
+
+However, we really need a better understanding of the park's ecosystem before we classify damaging based on area burned. Small areas of the park may contain a richer habitat, economy, or ecology than other largers areas of the park. We won't be able to make these distinctions until we have access to the park's information. For these reasons, we'll consider all area burns as potentially damaging during our exploratory analysis.
+
+\begin{center}
+Linearity between Wind and Area Burn
+\end{center}
+
+Wind seemed to be the only variable that showed a consistent linear relationship with the log of area burned. We note that there's a correlation of `r cor(ff$FFMC,log(ff$area + 1))` between those two variables. As we've seen with the temperature analysis, it's likely that wind interacts with other variables to influence area burn. We get a hint of that in that there are a relatively high number of low FFMC ratings during high wind periods which could be dragging down the slope of the area line.
+
+```{r, warning=FALSE}
+ggplot(ff[ff$FFMC>80,],aes(wind,log(area + 1),colour = FFMC)) + geom_point() +
+  geom_smooth(method = 'lm') + labs(title = "Wind Impact on Area Burn Accounting for FFMC")
+```
+
+### Investigating Relationships between Categorical Variables and Area
+
+Since the scatterplot matrix isn't effective in highlighting categorical trends with area, we will evaluate each category separately. 
+
+\begin{center}
+Exploring Area Burn by Months
+\end{center}
+
+```{r, warning=FALSE}
+ggplot(ff, aes(month,log(area + 1))) + geom_boxplot() + geom_point() + stat_summary(fun.y=mean, colour="darkred", geom="point") +
+                 labs(title = "Spread of Fire Damage by Month",ylab = "Log of Burned Area (in hectares)")
+```
+
+Looking at the distribution of fire damage by month we note December has the higest average (red dot) and median burn area. This is a little unexpected given Portugal's seasonality (dec is part of their winter). Both the preceding month (nov) and following month (jan) have 0 oberservations of area burn. So its interesting that december would have `r nrow(ff[ff$month == 'dec' & ff$area > 0,])` instances of high area burn.
+
+Perhaps there are other variables in our dataset that can help explain what might be going on. We'll look at those variables that seem to be the strongest signals we have to see how they relate to the months. Before doing so, we'll recategorize the months into seasons to make the plotting a little more digestible.
+
+```{r}
+season = Recode(ff$month,"c('jun', 'jul','aug')='Summer'; c('sep','oct','nov')='Autumn';
+                c('dec','jan','feb')='Winter'; c('mar','apr','may')='Spring'")
+season_area = ggplot(ff, aes(season,log(area + 1))) + geom_boxplot() + geom_point()
+season_ffmc = ggplot(ff, aes(season,FFMC)) + geom_boxplot() + geom_point()
+season_wind = ggplot(ff, aes(season,wind)) + geom_boxplot() + geom_point()
+season_temp = ggplot(ff, aes(season,temp)) + geom_boxplot() + geom_point()
+plot_grid(season_area,season_ffmc,season_wind,season_temp)
+```
+
+What's odd is that despite having the highest average/median burn area, winter has the lowest FFMC ratings, the lowest temperatures, and no noticeable difference in wind observations than the other seasons. This could suggest that there are other variables at play that aren't in our dataset. For instance, there may be controlled fires intentionally set that we are unaware of.
+
+\begin{center}
+Exploring Area Burn by Day of Week
+\end{center}
+
+We can also see that the day-of-week is a pretty weak signal when looking at its relationship with the area burned.
+
+```{r}
+ggplot(ff, aes(day,log(area + 1))) + geom_boxplot() + geom_point() +
+  labs(title = "Spread of Fire Damage by Day",ylab = "Log of Burned Area (in hectares)")
+```
+
+\begin{center}
+Exploring Area Burn by Location
+\end{center}
+
+We are provided with separate x,y coordinates of the park's map. We combine those coordinates to created particular location points. We'll check to see if the magnitude of fire damage is concentrated in particular areas of the park. In the below graph, the numbers can be interpreted as (x,y) coordinate points.
+
+```{r}
+location = paste0(ff$X,ff$Y)
+ggplot(ff,aes(location,log(ff$area + 1))) + geom_boxplot() + geom_point() +
+  labs(title = 'Area Burn by Location')
+```
+
+The coordinates 44,65,74, and 86 stand out as having relatively higher distributions of fire damage than other locations. This could be an area of interest to pursue, but we'll likely need more information as these distributions could be a result of confounding variables such as camping zones.
+
+### Analysis of Secondary Effects (10 pts)
+
+### What secondary variables might have confounding effects on the relationships you  have identified? Explain how these variables affect your understanding of the data.
+
+```{r, warning=FALSE}
+
+```
+
+## Conclusion
+
+- Confounding Variables
+high fire spread in dec with no apparent explanation
+Possible confounding variables that may be influencing our analysis: camping zones and activity, controlled fires, other fire spread variables not included in our dataset
+
+- Collinearity Among Variables
+temperature and RH, DMC and DC, etc
+
+- Appropriateness of Multivariate Analysis for Better Insights
+interaction between wind and tempeature as example, possibility of interaction effects with other variables
 
 
 
-##relationships between dependent variables
-
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
