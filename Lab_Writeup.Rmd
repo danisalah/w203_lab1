@@ -1,32 +1,147 @@
 ---
 title: "Stats_Lab1"
-author: "Danielle Salah, Peter Trenkwalder, Tina Agarwal"
+author: "Danielle Salah, Peter Trenkwalder"
 date: "May 16, 2018"
-output: html_document
+output:
+  pdf_document: default
+  html_document: default
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+
 ```
 
-```{r load}
-df <- 'forestfires.csv'
+```{r load, include=FALSE}
+df <- read.csv('forestfires.csv')
 ```
 
-## Analysis
+
+```{r car}
+library(car)
+```
+
+
+## Introduction
+
+Our analysis serves to explore this design question: "what factors lead to particularly damaging forest fires?
+
+By performing exploratory analysis on this data we aim to discover commonalities in areas with sizable fire damange. The insights discovered will help inform a ditection system that provides early warnings to these regions. In order to identify these characteristics, we followed the following steps:
+
++ examine the data and make any necessary adjustments to improve its quality and usability
++ perform initial analysis on the included variables to identify key indicators
++ use multivariate analysis on the material variables to converge upon some commonalities
+
+Add: data source, restrictions
+
+## The Data
+
+Upon importing the data, we can see that we have `r nrow(df)` observations and `r length(colnames(df))` variables. These variables are mostly of the numerical type, with a few integers and two factors included as well. All of these variable types appear to be appropriate given the data.
+
+```{r shape}
+nrow(df)
+str(df)
+```
+
+Add: table of definitions
+
+## The Cleanup
+
+Initially in the process, we can see high level details on the 13 variables. None of them appear to have unreadable or otherwise unusable values, there are no negative minimums, and all of the index variables have minimums and maximums within the appropriate ranges for each specific index.
+
+
+```{r, include=FALSE}
+
+summary(df)
+
+```
+
+One cariable of interest based on these statistical summaries is rain. When we look at the histogram of this variable we can start to uncover what is happening.
 
 ```{r}
 
-names(df)
+hist(df$rain, breaks = 36, col = "blue",
+     xlab = "Amount of Rain (mm/m2)",
+     main = "Outside Rain")
 
 ```
 
-## Including Plots
+We immediately notice that there is a signficiant number of observations with no rain at all. While this detail may be important to the analysis in the future, it initially entirely obscures our observations of what the data looks like. If we graph a histogram of the data removing any 0 values, we can
 
-You can also embed plots, for example:
+```{r}
 
-```{r pressure, echo=FALSE}
-plot(pressure)
+rainNonZero <- subset(df$rain, df$rain > 0.00)
+
+hist(rainNonZero, breaks = 36, col = "blue",
+     xlab = "Amount of Rain (mm/m2)",
+     main = "On Rainy Days")
+
 ```
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+From here, a few things become clear about the variable:
+
++ There are only `r length(rainNonZero)` observations on days with any rain.
++ All but one of these observations falls below 1.5 mm/m2.
++ This single observation is actually quite an outlier at 6.4 mm/m2.
+
+```{r}
+
+rainyDay <- subset(df, df$rain > 6)
+rainyDay
+
+```
+
+When we isolate the data for this observation, we can see that it occurred in `r rainyDay$month` which is a reasonable time of the year for a very rainy day. Interestingly this observation also includes `r rainyDay$area` hectares of burned forest.
+
+## The Time
+
+To aid in later analysis, we decided to subset the data according to season under the hypothesis that the factors contributing to fire risk differed at different times of the year.
+
+```{r}
+
+spring <- subset(df, df$month == "mar" | df$month == "apr" | df$month == "may")
+summer <- subset(df, df$month == "jun" | df$month == "jul" | df$month == "aug")
+fall <- subset(df, df$month == "sep" | df$month == "oct" | df$month == "nov")
+winter <- subset(df, df$month == "dec" | df$month == "jan" | df$month == "feb")
+
+```
+
+This gives up four subsets of the data frame: `r nrow(spring)` in spring, `r nrow(summer)` in summer, `r nrow(fall)` in fall, and `r nrow(winter)` in winter.
+
+## Target Variables
+
+
+```{r}
+
+plot(df$area)
+plot(df$temp)
+
+```
+
+
+### Months
+** shift order
+** break into seasons
+
+```{r}
+
+plot(df$month, 
+     main = "Count of Fires per Month")
+
+```
+
+
+```{r}
+
+plot(df$temp, log(df$area))
+plot(df$DC, log(df$area))
+plot(df$ISI, log(df$area))
+
+```
+
+```{r}
+
+cor(df$DC, df$area)
+cor(df$ISI, df$area)
+
+```
