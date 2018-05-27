@@ -1,6 +1,6 @@
 ---
-title: "Forest Fires"
-author: "PT"
+title: "w203 Lab 1: Forest Fires"
+author: "Danielle Salah, Peter Trenkwalder"
 date: "May 25, 2018"
 output:
   pdf_document: default
@@ -11,17 +11,179 @@ output:
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-# Loading Required Packages and Reading the dataset
+# Loading Packages and Data
+
 ```{r, warning=FALSE}
 library(car)
 library(ggplot2)
 library(cowplot)
+library(pander)
 ff = read.csv('forestfires.csv')
 ```
 
-## Analysis of Key Relationships
+## Introduction
 
-### Investigating Relationships between Quantitative Variables and Area
+Our analysis serves to explore this design question: "what factors lead to particularly damaging forest fires?
+
+By performing exploratory analysis on this data we aim to discover commonalities in areas with sizable fire damange. The insights discovered will help inform a ditection system that provides early warnings to these regions. In order to identify these characteristics, we followed the following steps:
+
++ examine the data and make any necessary adjustments to improve its quality and usability
++ perform initial analysis on the included variables to identify key indicators
++ use multivariate analysis on the material variables to converge upon some commonalities
+
+Add: data source, restrictions
+
+## The Data
+
+Upon importing the data, we can see that we have `r nrow(ff)` observations and `r length(colnames(ff))` variables. These variables are mostly of the numerical type, with a few integers and two factors included as well. All of these variable types appear to be appropriate given the data.
+
+```{r shape, echo=TRUE}
+
+str(ff)
+```
+
+To better understand the specifics of the variables included in the dataset, we pulled details from the original data source. The definitions for each variables used in this report are included in the following table:
+
+Variable      | Name                       | Range        | Details
+------------- | -------------------------- | ------------ |  -------------------------------------------------- 
+X             | X-axis Spatial Coordinate  | 1:9          |
+Y             | Y-axis Spatial Coordinate  | 2:9          |
+month         | Month of the Year          | 
+day           | Day of the Week            | 
+FFMC          | Fine Fuel Moisture Content | 18.7:96.20   | indicator of ease of ignition and flammability
+DMC           | Duff Moisture Code         | 1.1:291.3    | indicator of fuel consumption in decomposing layers
+DC            | Drought Code               | 7.9:860.6    | indicator of seasonal drought effects
+ISI           | Initial Spread Index       | 0.0:56.10    | rating of expected rate of fire spread
+temp          | Temperature (C)            | 2.2:33.30    |
+RH            | Relative Humidity (%)      | 15.0:100.0   |
+wind          | Wind Speed (km/h)          | 0.40:9.40    |
+rain          | Outside Rain (mm/m2)       | 0.0:6.4      |
+area          | Burned Area (hectares)     | 0.00:1090.84 |
+
+## The Cleanup
+
+Initially in the process, we can use the summary of the dataframe to see high level details on the 13 variables. None of them appear to have unreadable or otherwise unusable values, there are no negative minimums, and all of the index variables have minimums and maximums within the appropriate ranges for each specific index.
+
+
+```{r}
+
+summary(ff)
+
+```
+
+### Rain
+
+One variable of interest based on these statistical summaries is rain. When we look at the histogram of this variable we can start to uncover what is happening.
+
+```{r}
+
+hist(ff$rain, breaks = 80, col = "blue",
+     xlab = "Amount of Rain (mm/m2)",
+     main = "Outside Rain")
+
+```
+
+We immediately notice that there is a signficiant number of observations with no rain at all. While this detail may be important to the analysis in the future, it initially entirely obscures our observations of what the data looks like. If we graph a histogram of the data removing any 0 values, we can
+
+```{r}
+
+rainNonZero <- subset(ff$rain, ff$rain > 0.00)
+
+hist(rainNonZero, breaks = 80, col = "blue",
+     xlab = "Amount of Rain (mm/m2)",
+     main = "On Rainy Days")
+
+```
+
+From here, a few things become clear about the variable:
+
++ There are only `r length(rainNonZero)` observations on days with any rain.
++ All but one of these observations falls below 1.5 mm/m2.
++ This single observation is actually quite an outlier at 6.4 mm/m2.
+
+```{r, echo=TRUE}
+
+rainyDay <- subset(ff, ff$rain > 6)
+rainyDay
+
+```
+
+When we isolate the data for this observation, we can see that it occurred in `r rainyDay$month` which is a reasonable time of the year for a very rainy day. Interestingly this observation also includes `r rainyDay$area` hectares of burned forest, which is close to the mean of `r mean(ff$area)` this variable.
+
+### Area
+
+Similar to rain, we notice an interesting distribution in the area variable.
+
+```{r, echo=TRUE}
+
+hist(ff$area, breaks = 80, col = "orange",
+     xlab = "Burned Area (hectares)",
+     main = "Area of Forest Burned")
+
+```
+
+It appears that a significant portion of the observations have zero or near-zero hectares burnt. In fact, while the maximum value for this variable is `r max(ff$area)` hectares, the mean is only `r mean(ff$area)` hectares, greatly skewed by the zero values. A total of `r sum(ff$area == 0)` observations, or `r round(sum(ff$area == 0)/nrow(ff)*100, 2)`% have 0 hectares burned.
+
+```{r, echo=TRUE}
+
+areaNonZero <- subset(ff$area, ff$area > 0.00)
+
+par(mfrow = c(1,2))
+hist(areaNonZero, breaks = 40, col = "orange",
+     xlab = "Burned Area (hectares)",
+     main = "Non-Zero Area Burned")
+hist(subset(ff$area, ff$area > 0 & ff$area <= 50), breaks = 40, col = "orange",
+     xlab = "Burned Area (hectares",
+     main = "Non-Zero Area Burned < 50 Hectares")
+
+```
+
+Removing non-zero values for area doesn't do much to alter the view, as there are still a large number of observations in the lowest bucket of the histogram. When we alter the scale to look only at non-zero values less than 50 hectares, we see that there is no obvious cutoff point at which we can call a fire "significant." Later in our analysis, we will choose to consider any fire with burned area greater than 2 hectares to be **potentially damaging** though this cutoff values can be altered depending on the chosen sensitivity of the warning system.
+
+### Fine Fuel Moisture Content (FFMC)
+
+The third variable that has a noticeable skew is the FFMC, which is values on the index that measures the moisture content of fine fuel sources such as grass, pine needles, tree moss and figs, for example. Unlike the two previously examined variables, the distribution of the FFMC skews left. While there are outlier observations on the low end of the range, all the values appear to be reasonable and should therefore be kept for analysis.
+
+```{r, echo=TRUE}
+
+hist(ff$FFMC, breaks = 80, col = "dark green",
+     xlab = "FFMC Value",
+     main = "Fine Fuel Moisture Content (FFMC)")
+
+```
+
+### Other Variables
+
+The other variables included in the dataset appear to have reasonable distributions without any necessary adjustments.
+
+```{r}
+
+par(mfrow=c(2,3))
+hist(ff$DMC, breaks = 20, col = "grey", xlab = NULL, main = "DMC")
+hist(ff$DC, breaks = 20, col = "grey", xlab = NULL, main = "DC")
+hist(ff$ISI, breaks = 20, col = "grey", xlab = NULL, main = "ISI")
+hist(ff$temp, breaks = 20, col = "grey", xlab = NULL, main = "Temperature")
+hist(ff$RH, breaks = 20, col = "grey", xlab = NULL, main = "RH")
+hist(ff$wind, breaks = 20, col = "grey", xlab = NULL, main = "Wind")
+
+```
+
+## The Time
+
+To aid in later analysis, we created an additional variable called "season" that is calculated based on the month of the observation. We did this to allow for testing of the hypothesis that the factors contributing to fire risk differed at different times of the year.
+
+```{r}
+
+ff$season[ff$month == 'jun' | ff$month == 'jul' | ff$month == 'aug' ] <- "Summer"
+ff$season[ff$month == 'sep' | ff$month == 'oct' | ff$month == 'nov' ] <- "Autumn"
+ff$season[ff$month == 'dec' | ff$month == 'jan' | ff$month == 'feb' ] <- "Winter"
+ff$season[ff$month == 'mar' | ff$month == 'apr' | ff$month == 'may' ] <- "Spring"
+
+```
+
+We can now observe that there are `r sum(ff$season == "Summer")` observations in the summer, `r sum(ff$season == "Autumn")` observations in the autumn, `r sum(ff$season == "Winter")` observations in the winter, and `r sum(ff$season == "Spring")` observations in the spring.
+
+## Investigating Relationships between Quantitative Variables and Area
 
 Given the large number of variables in our dataset, we'll initially use a scatterplot matrix to help direct our focus on which variables might serve as stronger signals in leading to particularly damaging forest fires. Note that the scatterplot matrix will only give us meaningful linear trends with quantitative variables. So we'll investigate categorical variables like location, day, and month separately against our dependent variable, area. 
 
