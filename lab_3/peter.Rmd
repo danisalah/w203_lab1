@@ -1,0 +1,162 @@
+---
+title: "Crime Analysis"
+author: "Pete, Dani, Ken"
+date: "7/21/2018"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Intro
+
+The intention of this analysis is to explore socioeconomic determinants of crime across counties of North Carolina and to build an OLS regression model that informs our political campaign of the policies most likely to improve crime rates among its constituency. Our dataset consists of various measurements and information that lend itself to policy surrounding the following 3 categories: business and labor, policing, social programs. As such, we will focus our research around these broader topics. Specifically, we'd like to understand:
+
+* What, if any, tax policies could be levied to decrease crime rates
+* If wages are a strong signal for crime rates, should we consider a minumum wage and or union related policy
+	
+We're given wage data for 9 industry groups in both the private and public sector. Taking voter appeal into consideration, focusing labor policy on industry as a whole is likely to attract broader support than focusing policy on specific industries. So we've decided to aggregate wage data into the following classes: private, public, blue collar, and white collar.
+
+
+### Initial Data Loading and Cleaning
+
+To ensure the quality and integrity of our analysis, we examine our data set for the following:  
+1. problematic data types
+2. completeness of data for each of our variables
+3. duplicate entries
+4. known input errors such as probabilities and percentages of total greater than 1
+
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+# loading dependencies for analysis
+library(car)
+library(dplyr)
+library(ggplot2)
+library(cowplot)
+
+#read in the original data 
+crime = read.csv("crime_v2.csv")
+
+
+```
+
+```{r, eval=FALSE}
+#and take a glimpse of the variables and data types
+g = glimpse(crime)
+```
+
+From our snapshot, we note that prbconv is a factor but should really be a double. Further, pctmin80 is a percent expressed as number instead of in decimal form. All other percentage variables are expressed in decimal form. We adjust our dataset to correct for this.
+
+```{r,message=FALSE,warning=FALSE}
+crime = mutate(crime, prbconv = as.numeric(levels(crime$prbconv))[crime$prbconv], 
+               pctmin80 = pctmin80/100)
+```
+
+Checking for the percentage of complete observations in each variable, we note that all observations are missing the same percent of data. We check to ensure that dropping NAs don't drastically change the number of observations from our dataset. 
+
+```{r}
+# how complete is the data for each of our variables
+apply(is.na(crime),2,mean)
+```
+
+Since only `r 1 - nrow(na.omit(crime))/nrow(crime)` of all data is lost by dropping NAs, we will drop the NAs from our dataset instead of imputing values.
+
+```{r}
+# removing all NA inputs
+crime = na.omit(crime)
+```
+
+We also note that `r 1 - nrow(distinct(crime))/nrow(crime) ` of our data are duplicates which we'll drop as well.
+
+```{r}
+# removing all NA inputs
+crime = distinct(crime)
+```
+Lastly, we note that there are `r nrow(crime %>% filter(crmrte > 1 | prbarr > 1 | prbconv > 1 | prbpris > 1 | pctmin80 > 1 | pctymle > 1))` rows with input errors since probabilities or percent of totals can't be greater than 1. We remove those entry errors.
+
+```{r}
+# indexing input errors
+indx = crime %>% 
+        filter(crmrte > 1 | prbarr > 1 | prbconv > 1 | prbpris > 1 |
+                 pctmin80 > 1 | pctymle > 1) %>%
+          select(county)
+
+# removing all input errors
+crime = filter(crime, !county %in% indx$county)
+```
+
+### The Model Building Process
+
+\begin{center}
+Exploring Viability of Labor and Tax Policies to Reduce Crime
+\end{center}
+
+```{r}
+# aggregating private, public wages, blue collar and white collar wages
+crime = crime %>% rowwise() %>% mutate(total_avg_private_wkly_wages = sum(c(wcon,wtuc,wtrd,wfir,wser,wmfg)), 
+                                       total_avg_public_wkly_wages = sum(c(wfed,wsta,wloc)),
+                                       blue_collar_wkly_wages = sum(c(wcon,wtuc,wmfg)),
+                                       white_collar_wkly_wages = sum(c(wfir,wser,wfed,wsta,wloc)))
+
+# dropping unneccessary columns 
+crime = crime %>% select(-c(year,wcon:wloc,west,central,urban))
+```
+
+We examine the distributions for each of our variables of interest
+
+```{r}
+cr = ggplot(crime,aes(crmrte)) + geom_histogram(color = "black", fill = "blue", bins = 20)
+tax = ggplot(crime,aes(taxpc)) + geom_histogram(color = "black", fill = "green", bins = 20)
+pri_wage = ggplot(crime, aes(total_avg_private_wkly_wages)) + 
+  geom_histogram(color = "black", fill = "purple", bins = 20)
+pub_wage = ggplot(crime, aes(total_avg_public_wkly_wages)) + 
+  geom_histogram(color = "black", fill = "orange", bins = 20)
+blue_collar = ggplot(crime, aes(blue_collar_wkly_wages)) + 
+  geom_histogram(color = "black", fill = "red", bins = 20)
+white_collar = ggplot(crime, aes(white_collar_wkly_wages)) + 
+  geom_histogram(color = "black", fill = "yellow", bins = 20)
+plot_grid(cr,tax,pri_wage,pub_wage,blue_collar,white_collar, ncol = 2, nrow = 3)
+```
+
+The distributions seem fairly normal, but our dependent variable could benefit from a log transformation. We also note an evident outlier in our tax revenue per capita variable and will investigate that further.
+
+#### Outlier Observations:
+- There appears to be an outlier in tax revenue per capita. We've identified some interesting points associated with this outlier and have indicated this outlier's data points with respect to the other data by a red vertical line
+```{r}
+#taking a look at the outlier in tax revenue per capita
+taxpc_outlier = crime[which(crime$taxpc>100),]
+
+a = ggplot(crime,aes(polpc)) + geom_histogram(bins = 20) + 
+  geom_vline(xintercept = .00400962, color = "red")
+b = ggplot(crime,aes(crmrte)) + geom_histogram(bins = 20) + 
+  geom_vline(xintercept =  .0790163, color = "red")
+c = ggplot(crime,aes(total_avg_private_wkly_wages)) + geom_histogram(bins = 20) + 
+  geom_vline(xintercept =  1769.737, color = "red")
+d = ggplot(crime,aes(total_avg_public_wkly_wages)) + geom_histogram(bins = 20) + 
+  geom_vline(xintercept =  1026.67, color = "red")
+plot_grid(a,b,c,d,ncol = 2, nrow =2)
+```
+
+County 55 is substantially higher than all other counties and it also has the 4th highest crime rate despite having the highest police per capita. When investigating avg weekly wages in this county compared to the average wages of all counties, we note that county 55 has lower than avg wages. Low weekly wages and high tax revenue per capita isn't necessarily unexpected as major sources of local government tax revenue also consists of property and sales tax. We don't have measurements on these factors. So it's possible that crimes could be committed in high property valued areas like retirement communities where weekly incomes may be relatively low. This outlier may give an indication of possible omitted variable bias (property tax and median age demographic). It also hints that police per capita may not be a deterrent to crime.
+
+Next, we examine associations between our labor and tax variables with our dependent variable, crime rate.
+
+```{r}
+scatterplotMatrix( ~ log(crmrte) + log(taxpc) + total_avg_private_wkly_wages + total_avg_public_wkly_wages + 
+                     blue_collar_wkly_wages + white_collar_wkly_wages , data = crime)
+```
+
+the intial relationships between crime rates, privates wages, and taxes don't show much promise. Without the outlier in tax revenue per capita, there isn't a linear relationship with crime rate. Further, it doesn't seem to make sense that increasing wages would increase crime rates. Not to mention that there isn't much of a polictical angle with that associations. There must be some other variables that are influencing these trends.
+
+### assumptions of the model:
+1. Linearity in Parameters - residuals vs fitted values plot 
+2. Random Sample - independent, identical probability distributions for population representation
+3. No Perfect Collinearity: the standard errors that are computed for the fitted values are based on the assumption that there is no exact linear combinations between explanatory variables. 
+4. Zero Conditional Mean - no correlation of error terms - residuals vs fitted?? identifying omitted variable bias
+5. Homoskedasticity
+
+
+
+
