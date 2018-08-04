@@ -8,7 +8,7 @@ output:
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = TRUE, tidy.opts=list(width.cutoff=60),tidy=TRUE)
 ```
 
 ### Intro
@@ -42,8 +42,6 @@ library(stargazer)
 
 #read in the original data 
 crime = read.csv("crime_v2.csv")
-
-
 ```
 
 ```{r, eval=FALSE}
@@ -61,7 +59,6 @@ crime = mutate(crime, prbconv = as.numeric(levels(crime$prbconv))[crime$prbconv]
 We first check for any empty rows in the data set and find that there aren't any.
 
 ```{r}
-
 crime[rowSums(is.na(crime)) != ncol(crime),]
 ```
 
@@ -113,9 +110,6 @@ crime = crime %>% rowwise() %>% mutate(total_avg_private_wkly_wages = sum(c(wcon
                                        total_avg_public_wkly_wages = sum(c(wfed,wsta,wloc)),
                                        blue_collar_wkly_wages = sum(c(wcon,wtuc,wmfg)),
                                        white_collar_wkly_wages = sum(c(wfir,wser,wfed,wsta,wloc)))
-
-# dropping unneccessary columns 
-crime = crime %>% select(-c(year,wcon:wloc,west,central,urban))
 ```
 
 We examine the distributions for each of our variables of interest
@@ -216,7 +210,6 @@ A Review of the Assumptions in Our Model
 ```{r}
 # plotting residuals vs fitted values
 plot(model1, which = 1)
-
 ```
 
 We can see that the residuals seem evenly distributed on on both sides of zero and that there are no major fanning or curve effects. What is suspect is the cluttering around specific predicted values of our dependent variable, (log(crmrte)), and the non-uniform distribution of points which may be indicative of omitted variable bias.
@@ -283,10 +276,36 @@ summary(model3)$coefficients[,4]
 Lastly, because of the sheer number and variety of variables included in model 3, it is much more difficult to interpret and conveying meaninful policy recommendations based off it is nearly impossible. 
 
 
+# Goodness of Fit Vs Parsimony
+
+As we developed our prediction model to be more accurate and precise with parsimony model all the while not losing the goodness of fit, we further explored in our selection of variables to use as explanatory variables. As our model 3 indicated that there are many variables that has multicollinearity that would inflate our $R^2$. In addition, $R^2$ would increase as we add more variables in our model. Evidently we see in our model3. 
+
+To further fine tune our model, we chose 9 variables as our explanatory variables. We selected 3 out of 9 variables to be our dummy variables: `west`, `central` and `urban` because we believed that crime events are different across regions and this would generate three different regression line based on the location. Those dummy variables effect are absorbed in our first model1 where we only used `density` as our explanatory variable.  
+
+# Model 4
+
+```{r}
+model4 = lm(crmrte ~ prbarr + prbconv + polpc + sqrt(density) + pctmin80 + pctymle + factor(west) + factor(central) + factor(urban), data=crime)
+summary(model4)
+par(mfrow=c(2,2))
+plot(model4)
+```
+
+# Akaike test 
+
+```{r}
+AIC(model1)
+AIC(model2)
+AIC(model3)
+AIC(model4)
+```
+
+We employed Akaike test to choose which model gives us a better model as AIC test the goodness-of-fit and parsimony model. We observed that our last model 4 has the better fit albeit with only 9 explantory varibles. All the while we also maintained our $R^2$ variation at **`0.837`**. 
+
 ### The Regression Table
 
 ```{r, results='asis'}
-stargazer(model1, model2, model3, type = "latex", 
+stargazer(model1, model2, model3, model4, type = "latex", 
           report = "vc", # Don't report errors, since we haven't covered them
           title = "Linear Models Predicting Crime Rates in NC",
           keep.stat = c("rsq", "n"),
@@ -310,6 +329,5 @@ The analysis in this study explored a variety of data that may be contributing f
 Based on these observations, we recommend a campaign based on policies that address these populations. By deploying crime reducing resources through a targeted approach, in densely populated communities and particularly where police forces have a greater difficulty with their probability of arrest, the politician in question can instate programs design to outreach young men in the area.
 
 However, informing the campaign strategy based on this analysis alone would overlook significant contributors to crime rates as well as a more sophisticated qualitative understanding of the distinct needs of the very differing counties in North Carolina. 
-
 
 
