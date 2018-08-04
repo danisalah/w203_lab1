@@ -285,7 +285,7 @@ To further fine tune our model, we chose 9 variables as our explanatory variable
 # Model 4
 
 ```{r}
-model4 = lm(crmrte ~ prbarr + prbconv + polpc + sqrt(density) + pctmin80 + pctymle + factor(west) + factor(central) + factor(urban), data=crime)
+model4 = lm(log(crmrte) ~ prbarr + prbconv + polpc + sqrt(density) + pctmin80 + log(pctymle) + factor(west) + factor(central) + factor(urban), data=crime)
 summary(model4)
 par(mfrow=c(2,2))
 plot(model4)
@@ -300,7 +300,7 @@ AIC(model3)
 AIC(model4)
 ```
 
-We employed Akaike test to choose which model gives us a better model as AIC test the goodness-of-fit and parsimony model. We observed that our last model 4 has the better fit albeit with only 9 explantory varibles. All the while we also maintained our $R^2$ variation at **`0.837`**. 
+We employed Akaike test to choose which model gives us a better model as AIC test the goodness-of-fit and parsimony model. We observed that our last model 4 has the better fit albeit with only 9 explantory varibles. All the while we also maintained our $R^2$ variation at **`0.822`**. 
 
 ### The Regression Table
 
