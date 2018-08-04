@@ -319,10 +319,6 @@ summary(model3)$r.squared
 
 Our 3rd model accounts for `r summary(model3)$r.squared` of the variability in crime rates, but we'd expect it to capture more variability because it contains all the data. We also note that it has a lower AIC score at `r AIC(model3)` than our prior two models, but this doesn't necessarily mean this is the best model fit for the true population model. We also point out that many of the variables have high p-values so we would fail to reject the null hypothesis that the coefficient is equal to zero (ie. no effect). In other words many of these coefficients with p-values greater than .2 like prbpris, avgsen, mix, etc could very well have no effect on crime rate.
 
-```{r}
-summary(model3)$coefficients[,4] 
-```
-
 Lastly, because of the sheer number and variety of variables included in model 3, it is much more difficult to interpret and conveying meaninful policy recommendations based off it is nearly impossible. 
 
 
